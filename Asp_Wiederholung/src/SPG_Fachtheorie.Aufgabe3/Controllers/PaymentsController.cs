@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using SPG_Fachtheorie.Aufgabe1.Infrastructure;
 using SPG_Fachtheorie.Aufgabe1.Model;
 using SPG_Fachtheorie.Aufgabe3.Dtos;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SPG_Fachtheorie.Aufgabe3.Controllers
 {
@@ -60,6 +63,57 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
                 .FirstOrDefault();
             if (payment is null) return NotFound();
             return Ok(payment);
+        }
+
+        /// <summary>
+        /// POST /api/payments
+        /// </summary>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost]
+        public IActionResult CreateNewPayment([FromBody] NewPaymentCommand command)
+        {
+            if (command.PaymentDateTime > DateTime.Now.AddMinutes(1))
+            {
+                return BadRequest(new ProblemDetails { Title = "Invalid payment date", Detail = "Payment date cannot be more than 1 minute in the future." });
+            }
+
+            var cashDesk = _db.CashDesks.FirstOrDefault(cd => cd.Number == command.CashDeskNumber);
+            if (cashDesk == null)
+            {
+                return BadRequest(new ProblemDetails { Title = "Invalid cash desk", Detail = "Cash desk not found." });
+            }
+
+            var employee = _db.Employees.FirstOrDefault(e => e.RegistrationNumber == command.EmployeeRegistrationNumber);
+            if (employee == null)
+            {
+                return BadRequest(new ProblemDetails { Title = "Invalid employee", Detail = "Employee not found." });
+            }
+
+            if (!Enum.TryParse<PaymentType>(command.PaymentType, out var paymentType))
+            {
+                return BadRequest(new ProblemDetails { Title = "Invalid payment type", Detail = "Payment type not recognized." });
+            }
+
+            var payment = new Payment
+            {
+                CashDesk = cashDesk,
+                PaymentDateTime = command.PaymentDateTime,
+                Employee = employee,
+                PaymentType = paymentType
+            };
+
+            try
+            {
+                _db.Payments.Add(payment);
+                _db.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ProblemDetails { Title = "Error saving payment", Detail = ex.Message });
+            }
+
+            return CreatedAtAction(nameof(GetPaymentById), new { id = payment.Id }, payment.Id);
         }
     }
 }
