@@ -6,7 +6,7 @@ using SPG_Fachtheorie.Aufgabe3.Dtos;
 
 namespace SPG_Fachtheorie.Aufgabe3.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/[controller]")]  // --> api/payments
     [ApiController]
     public class PaymentsController : ControllerBase
     {
@@ -16,44 +16,50 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
         {
             _db = db;
         }
+
+        /// <summary>
+        /// GET /api/payments
+        /// GET /api/payments?cashDesk=1
+        /// GET /api/payments?dateFrom=2024-05-13
+        /// GET /api/payments?dateFrom=2024-05-13&cashDesk=1
+        /// </summary>
+        [HttpGet]
+        public ActionResult<List<PaymentDto>> GetAllPayments(
+            [FromQuery] int? cashDesk,
+            [FromQuery] DateTime? dateFrom)
+        {
+            var payments = _db.Payments
+                .Where(p => (!cashDesk.HasValue || p.CashDesk.Number == cashDesk.Value)
+                         && (!dateFrom.HasValue || p.PaymentDateTime >= dateFrom.Value))
+                .Select(p => new PaymentDto(
+                    p.Id, p.Employee.FirstName, p.Employee.LastName,
+                    p.PaymentDateTime,
+                    p.CashDesk.Number, p.PaymentType.ToString(),
+                    p.PaymentItems.Sum(pi => pi.Price)))
+                .ToList();
+            return Ok(payments);
+        }
+
+        /// <summary>
+        /// GET /api/payments/{id}
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
         [HttpGet("{id}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ActionResult<PaymentDetailDto> GetPayment(int id)
+        public ActionResult<PaymentDetailDto> GetPaymentById(int id)
         {
             var payment = _db.Payments
                 .Where(p => p.Id == id)
-                .Select(p => new PaymentDetailDto(p.Id, 
-                p.Employee.FirstName, p.Employee.LastName, p.CashDesk.Number, p.PaymentType.ToString(),
-                p.PaymentItems.Select(pi => new PaymentItemDto(
-                    pi.ArticleName, pi.Amount, pi.Price)).ToList())).FirstOrDefault();
-            if (payment == null)
-            {
-                return NotFound();
-            }
+                .Select(p => new PaymentDetailDto(
+                    p.Id, p.Employee.FirstName, p.Employee.LastName,
+                    p.CashDesk.Number, p.PaymentType.ToString(),
+                    p.PaymentItems
+                        .Select(pi => new PaymentItemDto(
+                            pi.ArticleName, pi.Amount, pi.Price))
+                        .ToList()))
+                .FirstOrDefault();
+            if (payment is null) return NotFound();
             return Ok(payment);
-        }
-        [HttpGet]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public ActionResult<List<PaymentDto>> GetPayments(
-        [FromQuery] int? cashDesk,
-        [FromQuery] DateTime? dateFrom)
-        {
-            IQueryable<Payment> query = _db.Payments;
-
-            if (cashDesk.HasValue)
-                query = query.Where(p => p.CashDesk.Number == cashDesk.Value);
-
-            if (dateFrom.HasValue)
-                query = query.Where(p => p.PaymentDateTime >= dateFrom.Value);
-
-            var payments = query
-                .Select(p => new PaymentDto(
-                    p.Id, p.Employee.FirstName, p.Employee.LastName, p.CashDesk.Number,
-                    p.PaymentType.ToString(), (int)p.PaymentItems.Sum(pi => pi.Price * pi.Amount))).ToList();
-            
-            return Ok(payments);
         }
     }
 }
