@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SPG_Fachtheorie.Aufgabe1.Infrastructure;
 using SPG_Fachtheorie.Aufgabe1.Model;
+using SPG_Fachtheorie.Aufgabe3.Commands;
 using SPG_Fachtheorie.Aufgabe3.Dtos;
 using System;
 using System.Collections.Generic;
@@ -65,55 +67,71 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
             return Ok(payment);
         }
 
-        /// <summary>
-        /// POST /api/payments
-        /// </summary>
-        /// <param name="command"></param>
-        /// <returns></returns>
         [HttpPost]
-        public IActionResult CreateNewPayment([FromBody] NewPaymentCommand command)
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public IActionResult AddPayment([FromBody] NewPaymentCommand cmd)
         {
-            if (command.PaymentDateTime > DateTime.Now.AddMinutes(1))
+            // Löse die foreign keys auf.
+            var cashDesk = _db.CashDesks
+                .FirstOrDefault(c => c.Number == cmd.CashDeskNumber);
+            if (cashDesk is null) return Problem("Invalid cashdesk", statusCode: 400);
+            var employee = _db.Employees
+                .FirstOrDefault(e => e.RegistrationNumber == cmd.EmployeeRegistrationNumber);
+            if (employee is null) return Problem("Invalid employee", statusCode: 400);
+            // Erzeuge die Modelklasse
+            var paymentType = Enum.Parse<PaymentType>(cmd.PaymentType);
+            var payment = new Payment(
+                cashDesk, cmd.PaymentDateTime, employee, paymentType);
+            _db.Payments.Add(payment);
+            try
             {
-                return BadRequest(new ProblemDetails { Title = "Invalid payment date", Detail = "Payment date cannot be more than 1 minute in the future." });
+                // Führe das INSERT INTO durch.
+                _db.SaveChanges();
+            }
+            catch (DbUpdateException e)
+            {
+                return Problem(e.InnerException?.Message ?? e.Message, statusCode: 400);
+            }
+            return CreatedAtAction(nameof(AddPayment), new { payment.Id });
+        }
+
+        /// <summary>
+        /// DELETE /api/payments/{id}?deleteItems=true|false
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="deleteItems"></param>
+        /// <returns></returns>
+        [HttpDelete("{id}")]
+        public IActionResult DeletePayment(int id, [FromQuery] bool deleteItems = false)
+        {
+            var payment = _db.Payments.Include(p => p.PaymentItems).FirstOrDefault(p => p.Id == id);
+            if (payment == null)
+            {
+                return NotFound();
             }
 
-            var cashDesk = _db.CashDesks.FirstOrDefault(cd => cd.Number == command.CashDeskNumber);
-            if (cashDesk == null)
+            if (deleteItems)
             {
-                return BadRequest(new ProblemDetails { Title = "Invalid cash desk", Detail = "Cash desk not found." });
+                _db.PaymentItems.RemoveRange(payment.PaymentItems);
+            }
+            else if (payment.PaymentItems.Any())
+            {
+                return BadRequest(new ProblemDetails { Title = "Payment has payment items", Detail = "Payment has payment items." });
             }
 
-            var employee = _db.Employees.FirstOrDefault(e => e.RegistrationNumber == command.EmployeeRegistrationNumber);
-            if (employee == null)
-            {
-                return BadRequest(new ProblemDetails { Title = "Invalid employee", Detail = "Employee not found." });
-            }
-
-            if (!Enum.TryParse<PaymentType>(command.PaymentType, out var paymentType))
-            {
-                return BadRequest(new ProblemDetails { Title = "Invalid payment type", Detail = "Payment type not recognized." });
-            }
-
-            var payment = new Payment
-            {
-                CashDesk = cashDesk,
-                PaymentDateTime = command.PaymentDateTime,
-                Employee = employee,
-                PaymentType = paymentType
-            };
+            _db.Payments.Remove(payment);
 
             try
             {
-                _db.Payments.Add(payment);
                 _db.SaveChanges();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new ProblemDetails { Title = "Error saving payment", Detail = ex.Message });
+                return StatusCode(500, new ProblemDetails { Title = "Error deleting payment", Detail = ex.Message });
             }
 
-            return CreatedAtAction(nameof(GetPaymentById), new { id = payment.Id }, payment.Id);
+            return NoContent();
         }
     }
 }
