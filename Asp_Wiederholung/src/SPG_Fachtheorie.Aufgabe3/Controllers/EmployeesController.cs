@@ -86,7 +86,7 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
             return CreatedAtAction(nameof(AddManager), new { manager.RegistrationNumber });
         }
 
-        /// POST /api/employee/manager
+        /// POST /api/employee/cashier
         [HttpPost("cashier")]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -132,6 +132,75 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
                 _db.Payments.RemoveRange(payments);
                 _db.SaveChanges();
                 _db.Employees.Remove(employee);
+                _db.SaveChanges();
+            }
+            catch (DbUpdateException e)
+            {
+                return Problem(e.InnerException?.Message ?? e.Message, statusCode: 400);
+            }
+            return NoContent();
+        }
+
+        /// <summary>
+        /// PUT /api/manager/{registrationNumber}
+        /// </summary>
+
+        [HttpPut("/api/manager/{registrationNumber}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public IActionResult UpdateManager(
+            int registrationNumber, [FromBody] UpdateManagerCommand cmd)
+        {
+            if (registrationNumber != cmd.RegistrationNumber)
+                return Problem("Invalid registration number", statusCode: 400);
+            var manager = _db.Managers
+                .FirstOrDefault(m => m.RegistrationNumber == registrationNumber);
+            if (manager is null)
+                return Problem("Manager not found.", statusCode: 404);
+            if (manager.LastUpdate != cmd.LastUpdate)
+                return Problem("Manager has changed.", statusCode: 400);
+            manager.FirstName = cmd.FirstName;
+            manager.LastName = cmd.LastName;
+
+            manager.Address = cmd.Address is not null
+                ? new Address(cmd.Address.Street, cmd.Address.Zip, cmd.Address.City)
+                : null;
+
+            manager.CarType = cmd.CarType;
+            manager.LastUpdate = DateTime.UtcNow;
+            try
+            {
+                _db.SaveChanges();
+            }
+            catch (DbUpdateException e)
+            {
+                return Problem(
+                    e.InnerException?.Message ?? e.Message, statusCode: 400);
+            }
+            return NoContent();
+        }
+
+
+        /// <summary>
+        /// PATCH /api/employees/{registrationNumber}/address
+        /// </summary>
+        [HttpPatch("{registrationNumber}/address")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public IActionResult UpdateAddress(
+            int registrationNumber, [FromBody] UpdateAddressCommand cmd)
+        {
+            var employee = _db.Employees
+                .FirstOrDefault(e => e.RegistrationNumber == registrationNumber);
+            if (employee is null)
+                return Problem("Employee not found", statusCode: 404);
+
+            employee.Address = new Address(
+                cmd.Street, cmd.Zip, cmd.City);
+            try
+            {
                 _db.SaveChanges();
             }
             catch (DbUpdateException e)
