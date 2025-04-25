@@ -35,7 +35,5 @@ public class Program
         }
         app.MapControllers();
         app.Run();
-        builder.Services.AddScoped<PaymentService>();
-
     }
 }

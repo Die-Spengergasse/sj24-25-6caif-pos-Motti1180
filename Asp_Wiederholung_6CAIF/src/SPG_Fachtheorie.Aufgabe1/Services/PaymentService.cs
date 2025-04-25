@@ -3,7 +3,10 @@ using SPG_Fachtheorie.Aufgabe1.Commands;
 using SPG_Fachtheorie.Aufgabe1.Infrastructure;
 using SPG_Fachtheorie.Aufgabe1.Model;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace SPG_Fachtheorie.Aufgabe1.Services
 {
@@ -17,30 +20,25 @@ namespace SPG_Fachtheorie.Aufgabe1.Services
         }
 
         public IQueryable<Payment> Payments => _db.Payments.AsQueryable();
-
         public Payment CreatePayment(NewPaymentCommand cmd)
         {
+            // Löse die foreign keys auf.
             var cashDesk = _db.CashDesks
                 .FirstOrDefault(c => c.Number == cmd.CashDeskNumber);
             if (cashDesk is null)
-                throw new PaymentServiceException("Invalid cashdesk.");
-
+                throw new PaymentServiceException("Invalid cashdesk");
             var employee = _db.Employees
                 .FirstOrDefault(e => e.RegistrationNumber == cmd.EmployeeRegistrationNumber);
             if (employee is null)
-                throw new PaymentServiceException("Invalid employee.");
-
-            var existingPayment = _db.Payments
-                .FirstOrDefault(p => p.CashDesk.Number == cmd.CashDeskNumber && p.Confirmed == null);
-            if (existingPayment != null)
+                throw new PaymentServiceException("Invalid employee");
+            if (_db.Payments.Any(p => p.CashDesk.Number == cmd.CashDeskNumber && p.Confirmed == null))
                 throw new PaymentServiceException("Open payment for cashdesk.");
-
-            var paymentType = Enum.Parse<PaymentType>(cmd.PaymentType);
-            if (paymentType == PaymentType.CreditCard && !(employee is Manager))
+            if (cmd.PaymentType == "CreditCard" && employee.Type != "Manager")
                 throw new PaymentServiceException("Insufficient rights to create a credit card payment.");
 
-            var payment = new Payment(
-                cashDesk, DateTime.UtcNow, employee, paymentType);
+            // Erzeuge die Modelklasse
+            var paymentType = Enum.Parse<PaymentType>(cmd.PaymentType);
+            var payment = new Payment(cashDesk, DateTime.UtcNow, employee, paymentType);
             _db.Payments.Add(payment);
             SaveOrThrow();
             return payment;
@@ -50,25 +48,24 @@ namespace SPG_Fachtheorie.Aufgabe1.Services
         {
             var payment = _db.Payments.FirstOrDefault(p => p.Id == paymentId);
             if (payment is null)
-                throw new PaymentServiceException("Payment not found.");
-
+                throw new PaymentServiceException("Payment not found")
+                { IsNotFoundError = true };
             if (payment.Confirmed.HasValue)
-                throw new PaymentServiceException("Payment already confirmed.");
+                throw new PaymentServiceException("Payment already confirmed");
 
             payment.Confirmed = DateTime.UtcNow;
             SaveOrThrow();
         }
 
-        public void AddPaymentItem(NewPaymentCommand cmd)
+        public void AddPaymentItem(NewPaymentItemCommand cmd)
         {
             var payment = _db.Payments.FirstOrDefault(p => p.Id == cmd.PaymentId);
             if (payment is null)
                 throw new PaymentServiceException("Payment not found.");
-
             if (payment.Confirmed.HasValue)
                 throw new PaymentServiceException("Payment already confirmed.");
-
-            var paymentItem = new PaymentItem(cmd.ArticleName, cmd.Amount, cmd.Price, payment);
+            var paymentItem = new PaymentItem(
+                cmd.ArticleName, cmd.Amount, cmd.Price, payment);
             _db.PaymentItems.Add(paymentItem);
             SaveOrThrow();
         }
@@ -77,7 +74,8 @@ namespace SPG_Fachtheorie.Aufgabe1.Services
         {
             var payment = _db.Payments.FirstOrDefault(p => p.Id == paymentId);
             if (payment is null)
-                throw new PaymentServiceException("Payment not found.");
+                throw new PaymentServiceException("Payment not found.")
+                { IsNotFoundError = true };
 
             var paymentItems = _db.PaymentItems
                 .Where(p => p.Payment.Id == paymentId)
@@ -85,15 +83,30 @@ namespace SPG_Fachtheorie.Aufgabe1.Services
 
             if (deleteItems)
             {
-                _db.PaymentItems.RemoveRange(paymentItems);
+                try
+                {
+                    _db.PaymentItems.RemoveRange(paymentItems);
+                    _db.SaveChanges();
+                }
+                catch (DbUpdateException e)
+                {
+                    throw new PaymentServiceException(e.InnerException?.Message ?? e.Message);
+                }
             }
-            else if (paymentItems.Any())
+            else
             {
-                throw new PaymentServiceException("Payment has payment items.");
+                if (paymentItems.Any())
+                    throw new PaymentServiceException("Payment has payment items.");
             }
-
-            _db.Payments.Remove(payment);
-            SaveOrThrow();
+            try
+            {
+                _db.Payments.Remove(payment);
+                _db.SaveChanges();
+            }
+            catch (DbUpdateException e)
+            {
+                throw new PaymentServiceException(e.InnerException?.Message ?? e.Message);
+            }
         }
 
         private void SaveOrThrow()

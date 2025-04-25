@@ -1,16 +1,16 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SPG_Fachtheorie.Aufgabe1.Commands;
+using SPG_Fachtheorie.Aufgabe1.Infrastructure;
+using SPG_Fachtheorie.Aufgabe1.Model;
 using SPG_Fachtheorie.Aufgabe1.Services;
 using SPG_Fachtheorie.Aufgabe3.Commands;
 using SPG_Fachtheorie.Aufgabe3.Dtos;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace SPG_Fachtheorie.Aufgabe3.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/[controller]")]  // --> api/payments
     [ApiController]
     public class PaymentsController : ControllerBase
     {
@@ -82,20 +82,9 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
             }
         }
 
-        [HttpPatch("{id}")]
-        public IActionResult UpdateConfirmed(int id)
-        {
-            try
-            {
-                _service.ConfirmPayment(id);
-                return NoContent();
-            }
-            catch (PaymentServiceException e)
-            {
-                return Problem(e.Message, statusCode: 400);
-            }
-        }
-
+        /// <summary>
+        /// DELETE /api/payments/{id}?deleteItems=true|false
+        /// </summary>
         [HttpDelete("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -106,17 +95,62 @@ namespace SPG_Fachtheorie.Aufgabe3.Controllers
                 _service.DeletePayment(id, deleteItems);
                 return NoContent();
             }
+            catch (PaymentServiceException e) when (e.IsNotFoundError)
+            {
+                return Problem(e.Message, statusCode: 404);
+            }
             catch (PaymentServiceException e)
             {
                 return Problem(e.Message, statusCode: 400);
             }
         }
 
-        [HttpPut("/api/paymentItems/{id}")]
-        public IActionResult UpdatePayment(int id, [FromBody] UpdatePaymentItemCommand cmd)
+        //[HttpPut("/api/paymentItems/{id}")]
+        //public IActionResult UpdatePayment(int id, [FromBody] UpdatePaymentItemCommand cmd)
+        //{
+        //    if (cmd.Id != id)
+        //        return Problem("Invalid payment item id", statusCode: 400);
+
+        //    var paymentItem = _db.PaymentItems.FirstOrDefault(p => p.Id == cmd.Id);
+        //    if (paymentItem is null) return Problem("Payment item Item not found", statusCode: 404);
+
+        //    var payment = _db.Payments.FirstOrDefault(p => p.Id == cmd.PaymentId);
+        //    if (payment is null) return Problem("Payment Item not found", statusCode: 404);
+
+        //    if (paymentItem.LastUpdated != cmd.LastUpdated)
+        //        return Problem("Payment item has changed", statusCode: 400);
+
+        //    paymentItem.ArticleName = cmd.ArticleName;
+        //    paymentItem.Price = cmd.Price;
+        //    paymentItem.Payment = payment;
+        //    paymentItem.LastUpdated = DateTime.UtcNow;
+        //    try
+        //    {
+        //        _db.SaveChanges();
+        //    }
+        //    catch (DbUpdateException e)
+        //    {
+        //        return Problem(e.InnerException?.Message ?? e.Message, statusCode: 400);
+        //    }
+        //    return NoContent();
+        //}
+
+        [HttpPatch("{id}")]
+        public IActionResult UpdateConfirmed(int id)
         {
-            // Diese Route kann auskommentiert werden
-            return NoContent();
+            try
+            {
+                _service.ConfirmPayment(id);
+                return NoContent();
+            }
+            catch (PaymentServiceException e) when (e.IsNotFoundError)
+            {
+                return Problem(e.Message, statusCode: 404);
+            }
+            catch (PaymentServiceException e)
+            {
+                return Problem(e.Message, statusCode: 400);
+            }
         }
     }
 }
