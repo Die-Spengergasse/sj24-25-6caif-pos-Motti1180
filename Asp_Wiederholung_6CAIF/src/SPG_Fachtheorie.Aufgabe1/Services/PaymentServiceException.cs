@@ -3,8 +3,9 @@
 namespace SPG_Fachtheorie.Aufgabe1.Services
 {
     [Serializable]
-    internal class PaymentServiceException : Exception
+    public class PaymentServiceException : Exception
     {
+        public bool IsNotFoundError { get; set; }
         public PaymentServiceException()
         {
         }
